@@ -1,12 +1,61 @@
 // src/fetch_alerts.js
-console.log('Script starting...');
+import fs from 'fs/promises';
+
+const generateHTML = (alerts) => {
+    const alertsHTML = alerts.map(alert => `
+        <div class="alert">
+            <h2>${alert.header}</h2>
+            <p class="period">${alert.period}</p>
+        </div>
+    `).join('\n');
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>7 Train Service Alerts</title>
+    <style>
+        body {
+            font-family: -apple-system, system-ui, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .alert {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .period {
+            color: #666;
+            font-size: 0.9em;
+        }
+        .last-updated {
+            text-align: center;
+            color: #666;
+            margin-top: 40px;
+        }
+    </style>
+</head>
+<body>
+    <h1>7 Train Service Alerts</h1>
+    ${alertsHTML}
+    <div class="last-updated">
+        Last updated: ${new Date().toLocaleString()}
+    </div>
+</body>
+</html>`;
+};
 
 const getAlertDetails = (alert) => {
     const alertData = alert.alert || {};
     let headerText = null;
     let activePeriod = null;
 
-    // Get header text
     const headerTranslations = alertData.header_text?.translation || [];
     for (const translation of headerTranslations) {
         if (translation.language === 'en') {
@@ -15,7 +64,6 @@ const getAlertDetails = (alert) => {
         }
     }
 
-    // Get active period
     const mercuryAlert = alertData['transit_realtime.mercury_alert'] || {};
     const periodTranslations = mercuryAlert.human_readable_active_period?.translation || [];
     for (const translation of periodTranslations) {
@@ -37,30 +85,31 @@ const main = async () => {
         const data = await response.json();
         console.log('Total alerts received:', data.entity?.length || 0);
 
-        // Filter for 7 train alerts
         const sevenTrainAlerts = data.entity.filter(entity => {
             const alert = entity.alert || {};
             const informedEntities = alert.informed_entity || [];
-            
             return informedEntities.some(informedEntity => {
                 const mercurySelector = informedEntity['transit_realtime.mercury_entity_selector'] || {};
-                const sortOrder = mercurySelector.sort_order;
-                console.log('Found sort order:', sortOrder);
-                return sortOrder === 'MTASBWY:7:20';
+                return mercurySelector.sort_order === 'MTASBWY:7:20';
             });
         });
 
-        console.log('\nFound 7 train alerts:', sevenTrainAlerts.length);
+        console.log('Found 7 train alerts:', sevenTrainAlerts.length);
 
-        // Process each 7 train alert
-        sevenTrainAlerts.forEach(alert => {
+        const processedAlerts = sevenTrainAlerts.map(alert => {
             const { headerText, activePeriod } = getAlertDetails(alert);
-            console.log('\nAlert:', {
+            return {
                 id: alert.id,
                 header: headerText,
                 period: activePeriod
-            });
-        });
+            };
+        }).filter(alert => alert.header && alert.period);
+
+        console.log('Processed alerts:', processedAlerts.length);
+
+        const html = generateHTML(processedAlerts);
+        await fs.writeFile('index.html', html);
+        console.log('Generated HTML page');
 
     } catch (error) {
         console.error('Error:', error);
@@ -69,7 +118,7 @@ const main = async () => {
 };
 
 main().then(() => {
-    console.log('\nScript completed');
+    console.log('Script completed');
     process.exit(0);
 }).catch(error => {
     console.error('Fatal error:', error);
