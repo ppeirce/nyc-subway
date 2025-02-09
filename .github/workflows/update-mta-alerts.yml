@@ -12,8 +12,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -21,21 +19,19 @@ jobs:
           node-version: '20'
           
       - name: Install dependencies
-        run: |
-          npm install
-      
-      - name: Create required directories and files
-        run: |
-          mkdir -p data templates
-          touch data/last_check.json index.html
+        run: npm install
       
       - name: Run alert check
         run: node src/fetch_alerts.js
       
-      - name: Commit and push if there are changes
+      - name: Deploy to GitHub Pages
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add -A
+          git checkout gh-pages
+          mv index.html ..
+          git rm -rf .
+          mv ../index.html .
+          git add index.html
           git commit -m "Update alerts $(date +'%Y-%m-%d %H:%M:%S')" || echo "No changes to commit"
-          git push
+          git push origin gh-pages
