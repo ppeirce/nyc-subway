@@ -1,3 +1,5 @@
+console.log('Script start');
+
 // src/fetch_alerts.js
 import fs from 'fs/promises';
 import path from 'path';
