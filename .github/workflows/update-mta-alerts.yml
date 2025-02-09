@@ -10,11 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+      # First, get our source code
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: main
       
+      # Set up Node environment
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -23,17 +23,18 @@ jobs:
       - name: Install dependencies
         run: npm install
       
+      # Generate our new index.html
       - name: Run alert check
         run: node src/fetch_alerts.js
       
+      # Deploy just the index.html to GitHub Pages
       - name: Deploy to GitHub Pages
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git stash
-          git fetch origin gh-pages
-          git checkout gh-pages
-          git stash pop
-          git add index.html
-          git commit -m "Update alerts $(date +'%Y-%m-%d %H:%M:%S')" || echo "No changes to commit"
-          git push origin gh-pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: .
+          keep_files: false
+          enable_jekyll: false
+          user_name: 'GitHub Action'
+          user_email: 'action@github.com'
+          commit_message: "Update alerts ${{ github.event.head_commit.timestamp }}"
