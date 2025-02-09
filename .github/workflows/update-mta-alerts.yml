@@ -28,13 +28,12 @@ jobs:
       
       - name: Deploy to GitHub Pages
         run: |
-          git fetch origin gh-pages
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
+          git stash
+          git fetch origin gh-pages
           git checkout gh-pages
-          mv index.html ..
-          git rm -rf .
-          mv ../index.html .
+          git stash pop
           git add index.html
           git commit -m "Update alerts $(date +'%Y-%m-%d %H:%M:%S')" || echo "No changes to commit"
           git push origin gh-pages
