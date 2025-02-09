@@ -1,30 +1,61 @@
 // src/fetch_alerts.js
 import fs from 'fs/promises';
-import path from 'path';
 
-async function getStoredAlerts() {
-    try {
-        const data = await fs.readFile('data/last_check.json', 'utf8');
-        return JSON.parse(data);
-    } catch (error) {
-        // If file doesn't exist or is invalid, return empty object
-        return {};
-    }
-}
+const generateHTML = (alerts) => {
+    const alertsHTML = alerts.map(alert => `
+        <div class="alert">
+            <h2>${alert.header}</h2>
+            <p class="period">${alert.period}</p>
+        </div>
+    `).join('\n');
 
-async function updateStoredAlerts(currentAlerts) {
-    await fs.mkdir('data', { recursive: true });
-    await fs.writeFile(
-        'data/last_check.json',
-        JSON.stringify(currentAlerts, null, 2)
-    );
-}
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>7 Train Service Alerts</title>
+    <style>
+        body {
+            font-family: -apple-system, system-ui, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .alert {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .period {
+            color: #666;
+            font-size: 0.9em;
+        }
+        .last-updated {
+            text-align: center;
+            color: #666;
+            margin-top: 40px;
+        }
+    </style>
+</head>
+<body>
+    <h1>7 Train Service Alerts</h1>
+    ${alertsHTML}
+    <div class="last-updated">
+        Last updated: ${new Date().toLocaleString()}
+    </div>
+</body>
+</html>`;
+};
 
-function getAlertDetails(alert) {
+const getAlertDetails = (alert) => {
     const alertData = alert.alert || {};
-    
-    // Get header text
     let headerText = null;
+    let activePeriod = null;
+
     const headerTranslations = alertData.header_text?.translation || [];
     for (const translation of headerTranslations) {
         if (translation.language === 'en') {
@@ -32,9 +63,7 @@ function getAlertDetails(alert) {
             break;
         }
     }
-    
-    // Get active period
-    let activePeriod = null;
+
     const mercuryAlert = alertData['transit_realtime.mercury_alert'] || {};
     const periodTranslations = mercuryAlert.human_readable_active_period?.translation || [];
     for (const translation of periodTranslations) {
@@ -43,127 +72,55 @@ function getAlertDetails(alert) {
             break;
         }
     }
-    
+
     return { headerText, activePeriod };
-}
+};
 
-function filterSevenTrainAlerts(alertsData) {
-    const entities = alertsData.entity || [];
-    return entities.filter(entity => {
-        const alert = entity.alert || {};
-        const informedEntities = alert.informed_entity || [];
-        
-        return informedEntities.some(informedEntity => {
-            const mercurySelector = informedEntity['transit_realtime.mercury_entity_selector'] || {};
-            return mercurySelector.sort_order === 'MTASBWY:7:20';
-        });
-    });
-}
-
-function compareAlerts(previousAlerts, currentAlerts) {
-    const newAlerts = [];
-    const updatedAlerts = [];
-    const unchangedAlerts = [];
-    
-    for (const [alertId, details] of Object.entries(currentAlerts)) {
-        const { header, period } = details;
-        
-        if (!previousAlerts[alertId]) {
-            newAlerts.push([alertId, header, period]);
-        } else {
-            const previous = previousAlerts[alertId];
-            if (previous.header !== header || previous.period !== period) {
-                updatedAlerts.push([alertId, header, period]);
-            } else {
-                unchangedAlerts.push([alertId, header, period]);
-            }
-        }
-    }
-    
-    return {
-        newAlerts: newAlerts.sort(),
-        updatedAlerts: updatedAlerts.sort(),
-        unchangedAlerts: unchangedAlerts.sort()
-    };
-}
-
-async function generateHTML(newAlerts, updatedAlerts, unchangedAlerts) {
-    const formatAlertSection = (title, alerts) => {
-        if (!alerts.length) return '';
-        
-        const alertsHtml = alerts.map(([_, header, period]) => `
-            <div class="alert">
-                <h3>${header}</h3>
-                <p class="period">Active Period: ${period}</p>
-            </div>
-        `).join('\n');
-        
-        return `
-            <section class="alert-section">
-                <h2>${title}</h2>
-                ${alertsHtml}
-            </section>
-        `;
-    };
-    
-    const template = await fs.readFile('templates/page_template.html', 'utf8');
-    const content = `
-        ${formatAlertSection('New Alerts', newAlerts)}
-        ${formatAlertSection('Updated Alerts', updatedAlerts)}
-        ${formatAlertSection('Ongoing Alerts', unchangedAlerts)}
-    `;
-    
-    const html = template
-        .replace('{{CONTENT}}', content)
-        .replace('{{LAST_UPDATED}}', new Date().toLocaleString());
-    
-    await fs.writeFile('index.html', html);
-}
-
-async function main() {
+const main = async () => {
+    console.log('Main function starting...');
     try {
-        console.log('Fetching MTA alerts...');
         const response = await fetch('https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/camsys%2Fsubway-alerts.json');
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
+        console.log('API Response status:', response.status);
         
-        const alertsData = await response.json();
-        const sevenTrainAlerts = filterSevenTrainAlerts(alertsData);
-        console.log(`Found ${sevenTrainAlerts.length} alerts for the 7 train`);
-        
-        // Transform alerts into our format
-        const currentAlerts = {};
-        for (const alert of sevenTrainAlerts) {
+        const data = await response.json();
+        console.log('Total alerts received:', data.entity?.length || 0);
+
+        const sevenTrainAlerts = data.entity.filter(entity => {
+            const alert = entity.alert || {};
+            const informedEntities = alert.informed_entity || [];
+            return informedEntities.some(informedEntity => {
+                const mercurySelector = informedEntity['transit_realtime.mercury_entity_selector'] || {};
+                return mercurySelector.sort_order === 'MTASBWY:7:20';
+            });
+        });
+
+        console.log('Found 7 train alerts:', sevenTrainAlerts.length);
+
+        const processedAlerts = sevenTrainAlerts.map(alert => {
             const { headerText, activePeriod } = getAlertDetails(alert);
-            if (headerText && activePeriod) {
-                currentAlerts[alert.id] = {
-                    header: headerText,
-                    period: activePeriod
-                };
-            }
-        }
-        
-        // Compare with previous state
-        const previousAlerts = await getStoredAlerts();
-        const { newAlerts, updatedAlerts, unchangedAlerts } = compareAlerts(
-            previousAlerts,
-            currentAlerts
-        );
-        
-        console.log(`Changes detected: ${newAlerts.length} new, ${updatedAlerts.length} updated, ${unchangedAlerts.length} unchanged`);
-        
-        // Generate the HTML page
-        await generateHTML(newAlerts, updatedAlerts, unchangedAlerts);
-        
-        // Store current state for next time
-        await updateStoredAlerts(currentAlerts);
-        
-        console.log('Successfully updated alerts page');
+            return {
+                id: alert.id,
+                header: headerText,
+                period: activePeriod
+            };
+        }).filter(alert => alert.header && alert.period);
+
+        console.log('Processed alerts:', processedAlerts.length);
+
+        const html = generateHTML(processedAlerts);
+        await fs.writeFile('index.html', html);
+        console.log('Generated HTML page');
+
     } catch (error) {
-        console.error('Error updating alerts:', error);
+        console.error('Error:', error);
         process.exit(1);
     }
-}
+};
 
-export { main };
+main().then(() => {
+    console.log('Script completed');
+    process.exit(0);
+}).catch(error => {
+    console.error('Fatal error:', error);
+    process.exit(1);
+});
