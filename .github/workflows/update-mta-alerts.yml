@@ -2,8 +2,8 @@ name: Update MTA Alerts
 
 on:
   schedule:
-    - cron: '0 13 * * *'  # Runs at 13:00 UTC daily
-  workflow_dispatch:       # Allows manual trigger
+    - cron: '0 13 * * *'
+  workflow_dispatch:
 
 jobs:
   update-alerts:
@@ -12,6 +12,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: main
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -26,6 +28,7 @@ jobs:
       
       - name: Deploy to GitHub Pages
         run: |
+          git fetch origin gh-pages
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git checkout gh-pages
