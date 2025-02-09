@@ -3,7 +3,7 @@ name: Update MTA Alerts
 on:
   schedule:
     - cron: '0 13 * * *'  # Runs at 13:00 UTC daily
-  workflow_dispatch:       # Allows manual trigger for testing
+  workflow_dispatch:       # Allows manual trigger
 
 jobs:
   update-alerts:
@@ -13,7 +13,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2  # We need the previous commit to compare changes
+          fetch-depth: 2
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -22,11 +22,12 @@ jobs:
           
       - name: Install dependencies
         run: |
-          npm init -y
-          npm install node-fetch
+          npm install
       
-      - name: Create data directory
-        run: mkdir -p data
+      - name: Create required directories and files
+        run: |
+          mkdir -p data templates
+          touch data/last_check.json index.html
       
       - name: Run alert check
         run: node src/fetch_alerts.js
@@ -35,13 +36,6 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          
-          # Check if there are changes to commit
-          if git diff --quiet index.html data/last_check.json; then
-            echo "No changes to commit"
-            exit 0
-          fi
-          
-          git add index.html data/last_check.json
-          git commit -m "Update alerts $(date +'%Y-%m-%d %H:%M:%S')"
+          git add -A
+          git commit -m "Update alerts $(date +'%Y-%m-%d %H:%M:%S')" || echo "No changes to commit"
           git push
