@@ -76,6 +76,34 @@ const getAlertDetails = (alert) => {
     return { headerText, activePeriod };
 };
 
+const isSuspensionBetweenQBPtoHY = (headerText) => {
+    const pattern = 'No [7] between Queensboro Plaza, Queens and 34 St-Hudson Yards, Manhattan';
+    return headerText?.includes(pattern);
+}
+
+const filterAlerts = (entities) => {
+    const foundAlerts = entities.filter(entity => {
+        const { headerText } = getAlertDetails(entity);
+
+        const isSuspension = isSuspensionBetweenQBPtoHY(headerText);
+
+        const matchesSortOrder = (entity.alert?.informed_entity || []).some(informedEntity => {
+            const mercurySelector = informedEntity['transit_realtime.mercury_entity_selector'] || {};
+            return mercurySelector.sort_order === 'MTASBWY:7:20';
+        });
+
+        console.log(`\nAnalyzing alert: ${headerText}`);
+        console.log('Is suspension:', isSuspension);
+        console.log('Matches sort order:', matchesSortOrder);
+
+        return isSuspension;
+    });
+
+    console.log('Found alerts:', foundAlerts.length);
+    return foundAlerts;
+
+}
+
 const main = async () => {
     console.log('Main function starting...');
     try {
@@ -85,14 +113,7 @@ const main = async () => {
         const data = await response.json();
         console.log('Total alerts received:', data.entity?.length || 0);
 
-        const sevenTrainAlerts = data.entity.filter(entity => {
-            const alert = entity.alert || {};
-            const informedEntities = alert.informed_entity || [];
-            return informedEntities.some(informedEntity => {
-                const mercurySelector = informedEntity['transit_realtime.mercury_entity_selector'] || {};
-                return mercurySelector.sort_order === 'MTASBWY:7:20';
-            });
-        });
+        const sevenTrainAlerts = filterAlerts(data.entity || []);
 
         console.log('Found 7 train alerts:', sevenTrainAlerts.length);
 
