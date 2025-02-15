@@ -6,6 +6,7 @@ const generateHTML = (alerts) => {
         <div class="alert">
             <h2>${alert.header}</h2>
             <p class="period">${alert.period}</p>
+            <p class="period">${alert.normalizedPeriods}</p>
         </div>
     `).join('\n');
 
