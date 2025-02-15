@@ -1,17 +1,34 @@
 // src/fetch_alerts.js
 import fs from 'fs/promises';
 import * as chrono from 'chrono-node';
+import OpenAI from "openai";
+const openai = new OpenAI();
 
-const generateHTML = (alerts) => {
-    const alertsHTML = alerts.map(alert => `
+const generateHTML = (alert) => {
+
+    // alert is of format { header: '...', periods: ['...', ...], normalizedPeriods: [{ start: '...', end: '...' }, ...] }
+    // here we convert that into an HTML string
+    const alertsHTML = `
         <div class="alert">
             <h2>${alert.header}</h2>
-            <p class="period">${alert.period}</p>
+            <h3>Normalized Active Periods</h3>
             <p class="period">
-                ${alert.normalizedPeriods.map(period => `${period.start} - ${period.end}`).join('<br/>')}
+                ${alert.normalizedPeriods.map(period => `${period.start.toLocaleString()} to ${period.end.toLocaleString()}`).join('<br/>')}
             </p>
+            <h3>MTA Active Periods</h3>
+            <p class="period">${alert.periods.join('<br/>')}</p>
         </div>
-    `).join('\n');
+    `;
+
+    // const alertsHTML = alerts.map(alert => `
+    //     <div class="alert">
+    //         <h2>${alert.header}</h2>
+    //         <p class="period">${alert.period}</p>
+    //         <p class="period">
+    //             ${alert.normalizedPeriods.map(period => `${period.start.toLocaleString()} to ${period.end.toLocaleString()}`).join('<br/>')}
+    //         </p>
+    //     </div>
+    // `).join('\n');
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -96,9 +113,9 @@ const filterAlerts = (entities) => {
             return mercurySelector.sort_order === 'MTASBWY:7:20';
         });
 
-        console.log(`\nAnalyzing alert: ${headerText}`);
-        console.log('Is suspension:', isSuspension);
-        console.log('Matches sort order:', matchesSortOrder);
+        // console.log(`\nAnalyzing alert: ${headerText}`);
+        // console.log('Is suspension:', isSuspension);
+        // console.log('Matches sort order:', matchesSortOrder);
 
         return isSuspension;
     });
@@ -254,6 +271,71 @@ const betterNormalizeActivePeriods = (periodStr) => {
     }]
 };
 
+/*
+* OpenAI API call to normalize active periods
+* @param {string} periodStr - The period string to normalize
+* @returns {Array} - An array of objects with start and end keys
+* 
+* The problem we're solving for here is that the MTA does not provide us with nice, clean date ranges.
+* Instead, the strings we get are in a variety of formats, such as:
+* Feb 25 and Mar 4, Tuesdays, 12:45 AM to 5:00 AM
+* Feb 15 - 18, Sat 12:15 AM to Tue 5:00 AM (includes Presidents' Day)
+* Sat 12:15 AM to Mon 5:00 AM, Feb 22 - Mar 17
+* 
+* We want to normalize these into a consistent format of atomic date ranges, this often
+* involves breaking up the input string into multiple date ranges.
+* 
+* We use the OpenAI API to help us with this task, as it requires some natural language processing.
+* We provide the input string to the API and it returns the normalized date ranges as strings with the format:
+* 2025-02-25 00:45:00 - 2025-02-25 05:00:00
+* 
+* Then we parse these strings into Date objects and return them as a list of objects with start and end keys.
+* 
+*/
+const openaiNormalizeActivePeriods = async (periodStr) => {
+    console.log(`Normalizing active periods with OpenAI: ${periodStr}`);
+    const prompt = `Example: Given "Feb 25 and Mar 4, Tuesdays, 12:45 AM to 5:00 AM" This should be broken into two active periods:\n2025-02-25 00:45:00 - 2025-02-25 05:00:00\n2025-03-04 00:45:00 - 2025-03-04 05:00:00\nExample: Given "Feb 15 - 18, Sat 12:15 AM to Tue 5:00 AM (includes Presidents' Day)" This should return a single active period:\n2025-02-15 12:00:00 - 2025-02-18 12:00:00\nFirst, reason through how to format the input correctly. Then when you're ready to answer, write on a new line "Response:", then put the formatted active period(s) on the following lines. One active period per line. The format of your response should exactly match the example given above and should include nothing else, just the appropriate date ranges.\n\nInput: ${periodStr}`;
+
+    const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+            { role: "system", content: "You are a helpful assistant." },
+            {
+                role: "user",
+                content: prompt
+            }
+        ]
+    });
+
+    const messageContent = response.choices[0].message.content;
+    console.log(`OpenAI response: ${messageContent}`);
+
+    const flag = 'Response:';
+    const repsonseIndex = messageContent.lastIndexOf(flag);
+    if (repsonseIndex === -1) {
+        console.log('No response found');
+        return [{
+            start: 'openai query failed',
+            end: 'openai query failed'
+        }]
+    }
+
+    const responseText = messageContent.substring(repsonseIndex + flag.length).trim();
+    const lines = responseText.split('\n').map(line => line.trim()).filter(line => line !== '');
+
+    const periods = [];
+    for (const line of lines) {
+        const parts = line.split(' - ');
+        if (parts.length === 2) {
+            const start = new Date(parts[0].trim());
+            const end = new Date(parts[1].trim());
+            periods.push({ start, end });
+        }
+    }
+
+    return periods;
+};
+
 const main = async () => {
     console.log('Main function starting...');
     try {
@@ -267,12 +349,13 @@ const main = async () => {
 
         console.log('Found 7 train alerts:', sevenTrainAlerts.length);
 
-        const processedAlerts = sevenTrainAlerts.map(alert => {
+        const processedAlerts = await Promise.all(sevenTrainAlerts.map(async alert => {
             const { headerText, activePeriod } = getAlertDetails(alert);
             let normalizedPeriods = [];
+
             if (activePeriod) {
-                // normalizedPeriods = normalizeActivePeriods(activePeriod);
-                normalizedPeriods = betterNormalizeActivePeriods(activePeriod);
+                normalizedPeriods = await openaiNormalizeActivePeriods(activePeriod);
+
             }
             return {
                 id: alert.id,
@@ -280,11 +363,30 @@ const main = async () => {
                 period: activePeriod,
                 normalizedPeriods: normalizedPeriods
             };
-        }).filter(alert => alert.header && alert.period);
+        }));
+        const validAlerts = processedAlerts.filter(alert => alert.header && alert.period);
 
-        console.log('Processed alerts:', processedAlerts.length);
+        console.log('Processed alerts:', validAlerts.length);
 
-        const html = generateHTML(processedAlerts);
+        // now we're going to consolidate the alerts
+        // the header text is the same for all of them
+        // so we're going to combine them all into one alert group
+        // with a single header, a list of all active periods, and a list of all normalized active periods
+        const consolidatedAlert = validAlerts.reduce((consolidated, alert) => {
+            consolidated.header = alert.header;
+            consolidated.periods.push(alert.period);
+            consolidated.normalizedPeriods.push(...alert.normalizedPeriods);
+            return consolidated;
+        }, { header: '', periods: [], normalizedPeriods: [] });
+
+        // for testing, console log a readable version of the consolidated alert
+        console.log('Consolidated alert:', consolidatedAlert);
+
+        // now we sort the normalized periods by start date
+        consolidatedAlert.normalizedPeriods.sort((a, b) => new Date(a.start) - new Date(b.start));
+        console.log('Sorted consolidated alert:', consolidatedAlert);
+
+        const html = generateHTML(consolidatedAlert);
         await fs.writeFile('index.html', html);
         console.log('Generated HTML page');
 

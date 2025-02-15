@@ -8,7 +8,8 @@ on:
 jobs:
   update-alerts:
     runs-on: ubuntu-latest
-    
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     steps:
       # First, get our source code
       - name: Checkout repository
