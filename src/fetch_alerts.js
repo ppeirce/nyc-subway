@@ -57,7 +57,7 @@ const generateHTML = (alert) => {
     <h1>7 Train Service Alerts</h1>
     ${alertsHTML}
     <div class="last-updated">
-        Last updated: ${new Date().toLocaleString()}
+        Last updated: ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })} ET
     </div>
 </body>
 </html>`;
