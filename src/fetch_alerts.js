@@ -1,5 +1,6 @@
 // src/fetch_alerts.js
 import fs from 'fs/promises';
+import * as chrono from 'chrono-node';
 
 const generateHTML = (alerts) => {
     const alertsHTML = alerts.map(alert => `
@@ -230,6 +231,29 @@ const normalizeActivePeriods = (periodStr) => {
     return [{ start: periodStr, end: periodStr }];
 };
 
+const betterNormalizeActivePeriods = (periodStr) => {
+    const cleanedPeriod = periodStr.replace(/\(.*\)$/, '').trim();
+    const results = chrono.parse(cleanedPeriod, new Date(2025, 0, 1));
+
+    if (results.length === 0) {
+        return [{ start: periodStr, end: periodStr }];
+    }
+
+    const { start, end } = results[0];
+
+    if (!end) {
+        return [{
+            start: formatDateTime(start.date()),
+            end: formatDateTime(start.date())
+        }]
+    }
+
+    return [{
+        start: formatDateTime(start.date()),
+        end: formatDateTime(end.date())
+    }]
+};
+
 const main = async () => {
     console.log('Main function starting...');
     try {
@@ -247,7 +271,8 @@ const main = async () => {
             const { headerText, activePeriod } = getAlertDetails(alert);
             let normalizedPeriods = [];
             if (activePeriod) {
-                normalizedPeriods = normalizeActivePeriods(activePeriod);
+                // normalizedPeriods = normalizeActivePeriods(activePeriod);
+                normalizedPeriods = betterNormalizeActivePeriods(activePeriod);
             }
             return {
                 id: alert.id,
