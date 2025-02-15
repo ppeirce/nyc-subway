@@ -6,7 +6,9 @@ const generateHTML = (alerts) => {
         <div class="alert">
             <h2>${alert.header}</h2>
             <p class="period">${alert.period}</p>
-            <p class="period">${alert.normalizedPeriods}</p>
+            <p class="period">
+                ${alert.normalizedPeriods.map(period => `${period.start} - ${period.end}`).join('<br/>')}
+            </p>
         </div>
     `).join('\n');
 
