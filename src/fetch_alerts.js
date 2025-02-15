@@ -12,24 +12,15 @@ const generateHTML = (alert) => {
         <div class="alert">
             <h2>${alert.header}</h2>
             <h3>Normalized Active Periods</h3>
+            <p class="period">This is an attempt at using AI to turn the MTA's inconsistent date ranges into something more useful. It may not be perfect, so please cross-reference with the MTA's original alert text found below.</p>
             <p class="period">
                 ${alert.normalizedPeriods.map(period => `${period.start.toLocaleString()} to ${period.end.toLocaleString()}`).join('<br/>')}
             </p>
             <h3>MTA Active Periods</h3>
+            <p class="period">This is the original text from the MTA alert. The formatting may be inconsistent, but it's the information straight from the horses mouth, so if there's a discrepency between this and the normalized periods, trust this one.</p>
             <p class="period">${alert.periods.join('<br/>')}</p>
         </div>
     `;
-
-    // const alertsHTML = alerts.map(alert => `
-    //     <div class="alert">
-    //         <h2>${alert.header}</h2>
-    //         <p class="period">${alert.period}</p>
-    //         <p class="period">
-    //             ${alert.normalizedPeriods.map(period => `${period.start.toLocaleString()} to ${period.end.toLocaleString()}`).join('<br/>')}
-    //         </p>
-    //     </div>
-    // `).join('\n');
-
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -66,7 +57,7 @@ const generateHTML = (alert) => {
     <h1>7 Train Service Alerts</h1>
     ${alertsHTML}
     <div class="last-updated">
-        Last updated: ${new Date().toLocaleString()}
+        Last updated: ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })} ET
     </div>
 </body>
 </html>`;
@@ -113,9 +104,9 @@ const filterAlerts = (entities) => {
             return mercurySelector.sort_order === 'MTASBWY:7:20';
         });
 
-        // console.log(`\nAnalyzing alert: ${headerText}`);
-        // console.log('Is suspension:', isSuspension);
-        // console.log('Matches sort order:', matchesSortOrder);
+        console.log(`\nAnalyzing alert: ${headerText}`);
+        console.log('Is suspension:', isSuspension);
+        console.log('Matches sort order:', matchesSortOrder);
 
         return isSuspension;
     });
@@ -124,152 +115,6 @@ const filterAlerts = (entities) => {
     return foundAlerts;
 
 }
-
-// Helper to parse a time string like "12:45 AM" and return an object with hours and minutes
-const parseTime = (timeStr) => {
-    const [time, modifier] = timeStr.trim().split(/\s+/);
-    let [hours, minutes] = time.split(':').map(Number);
-    if (modifier.toUpperCase() === 'PM' && hours !== 12) {
-        hours += 12;
-    }
-    if (modifier.toUpperCase() === 'AM' && hours === 12) {
-        hours = 0;
-    }
-    return { hours, minutes };
-};
-
-// Helper to parse month and day (assumes current year, 2025)
-const parseMonthDay = (str) => {
-    const [monthStr, dayStr] = str.trim().split(' ');
-    const monthAbbr = {
-        Jan:0, Feb:1, Mar:2, Apr:3, May:4, Jun:5,
-        Jul:6, Aug:7, Sep:8, Oct:9, Nov:10, Dec:11
-    };
-    const month = monthAbbr[monthStr];
-    const day = parseInt(dayStr, 10);
-    return new Date(2025, month, day);
-};
-
-// Helper to format a Date object as "YYYY-MM-DD HH:mm:ss"
-const formatDateTime = (date) => {
-    const pad = (n) => String(n).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())} ` +
-           `${pad(date.getHours())}:${pad(date.getMinutes())}:00`;
-};
-
-const normalizeActivePeriods = (periodStr) => {
-    let periods = [];
-    
-    // Pattern 1:
-    // Example: "Feb 25 and Mar 4, Tuesdays, 12:45 AM to 5:00 AM"
-    const pattern1 = /^([\w]+\s\d+(?:\s*and\s*[\w]+\s\d+)+),\s*[\w]+s?,\s*(\d{1,2}:\d{2}\s*[APMapm]{2})\s*to\s*(\d{1,2}:\d{2}\s*[APMapm]{2})$/;
-    // Pattern 2:
-    // Example: "Sat 12:15 AM to Mon 5:00 AM, Feb 22 - Mar 17"
-    const pattern2 = /^([A-Za-z]{3})\s+(\d{1,2}:\d{2}\s*[APMapm]{2})\s+to\s+([A-Za-z]{3})\s+(\d{1,2}:\d{2}\s*[APMapm]{2}),\s*([\w]+\s+\d{1,2}\s*-\s*[\w]+\s+\d{1,2})$/;
-    
-    const match1 = periodStr.match(pattern1);
-    if (match1) {
-        // Extract parts
-        const datesPart = match1[1]; // e.g. "Feb 25 and Mar 4"
-        const startTimeStr = match1[2]; // e.g. "12:45 AM"
-        const endTimeStr = match1[3]; // e.g. "5:00 AM"
-        
-        const startTime = parseTime(startTimeStr);
-        const endTime = parseTime(endTimeStr);
-        
-        // Split on "and"
-        const dateStrs = datesPart.split(/\s*and\s*/);
-        dateStrs.forEach(dateStr => {
-            const date = parseMonthDay(dateStr);
-            let start = new Date(date);
-            start.setHours(startTime.hours, startTime.minutes, 0, 0);
-            let end = new Date(date);
-            end.setHours(endTime.hours, endTime.minutes, 0, 0);
-            periods.push({
-                start: formatDateTime(start),
-                end: formatDateTime(end)
-            });
-        });
-        return periods;
-    }
-    
-    const match2 = periodStr.match(pattern2);
-    if (match2) {
-        // Extract parts
-        const startDayStr = match2[1]; // e.g. "Sat"
-        const startTimeStr = match2[2]; // e.g. "12:15 AM"
-        const endDayStr = match2[3];   // e.g. "Mon"
-        const endTimeStr = match2[4];  // e.g. "5:00 AM"
-        const rangeStr = match2[5];    // e.g. "Feb 22 - Mar 17"
-        
-        const startTime = parseTime(startTimeStr);
-        const endTime = parseTime(endTimeStr);
-        
-        // Parse the date range endpoints
-        const [startRangeStr, endRangeStr] = rangeStr.split('-').map(s => s.trim());
-        const rangeStart = parseMonthDay(startRangeStr);
-        const rangeEnd = parseMonthDay(endRangeStr);
-        
-        // Map day abbreviations to JS weekday numbers (0=Sun,...,6=Sat)
-        const dayMap = { Sun:0, Mon:1, Tue:2, Wed:3, Thu:4, Fri:5, Sat:6 };
-        const targetStartDay = dayMap[startDayStr];
-        const targetEndDay = dayMap[endDayStr];
-        
-        // Find the first occurrence of the targetStartDay on or after rangeStart
-        let current = new Date(rangeStart);
-        while (current.getDay() !== targetStartDay) {
-            current.setDate(current.getDate() + 1);
-        }
-        
-        // For each occurrence, add a period if within rangeEnd
-        while (current <= rangeEnd) {
-            let periodStart = new Date(current);
-            periodStart.setHours(startTime.hours, startTime.minutes, 0, 0);
-            // Compute end day: difference in days (wrap around week if needed)
-            let diff = (targetEndDay - targetStartDay + 7) % 7;
-            // If diff === 0 then assume the same day: add 0 days; however, in our case diff>0
-            let periodEnd = new Date(current);
-            periodEnd.setDate(periodEnd.getDate() + diff);
-            periodEnd.setHours(endTime.hours, endTime.minutes, 0, 0);
-            // Only include if periodEnd is within the provided range (inclusive)
-            if (periodEnd <= rangeEnd || periodStart <= rangeEnd) {
-                periods.push({
-                    start: formatDateTime(periodStart),
-                    end: formatDateTime(periodEnd)
-                });
-            }
-            // Move to next week occurrence
-            current.setDate(current.getDate() + 7);
-        }
-        return periods;
-    }
-    
-    // If no pattern matched, return the original string as a single period.
-    return [{ start: periodStr, end: periodStr }];
-};
-
-const betterNormalizeActivePeriods = (periodStr) => {
-    const cleanedPeriod = periodStr.replace(/\(.*\)$/, '').trim();
-    const results = chrono.parse(cleanedPeriod, new Date(2025, 0, 1));
-
-    if (results.length === 0) {
-        return [{ start: periodStr, end: periodStr }];
-    }
-
-    const { start, end } = results[0];
-
-    if (!end) {
-        return [{
-            start: formatDateTime(start.date()),
-            end: formatDateTime(start.date())
-        }]
-    }
-
-    return [{
-        start: formatDateTime(start.date()),
-        end: formatDateTime(end.date())
-    }]
-};
 
 /*
 * OpenAI API call to normalize active periods
@@ -290,7 +135,6 @@ const betterNormalizeActivePeriods = (periodStr) => {
 * 2025-02-25 00:45:00 - 2025-02-25 05:00:00
 * 
 * Then we parse these strings into Date objects and return them as a list of objects with start and end keys.
-* 
 */
 const openaiNormalizeActivePeriods = async (periodStr) => {
     console.log(`Normalizing active periods with OpenAI: ${periodStr}`);
@@ -378,11 +222,8 @@ const main = async () => {
             consolidated.normalizedPeriods.push(...alert.normalizedPeriods);
             return consolidated;
         }, { header: '', periods: [], normalizedPeriods: [] });
-
-        // for testing, console log a readable version of the consolidated alert
         console.log('Consolidated alert:', consolidatedAlert);
 
-        // now we sort the normalized periods by start date
         consolidatedAlert.normalizedPeriods.sort((a, b) => new Date(a.start) - new Date(b.start));
         console.log('Sorted consolidated alert:', consolidatedAlert);
 
